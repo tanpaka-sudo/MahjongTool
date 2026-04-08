@@ -619,35 +619,15 @@ function SettlementView({settlement, sessions, setSessions, setTab}) {
 
     // Notionに自動保存
     try {
-      const NOTION_TOKEN = "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";
-      const DATABASE_ID  = "676f74fd-32e4-4dd7-ae19-7069d2a85821";
-      const sorted = [...pRange].sort((a,b)=>totalMoney[b]-totalMoney[a]);
-      const dateStr = new Date(targetSessions[0].date).toISOString().split("T")[0];
-      const props = {
-        "タイトル": { title: [{ text: { content: `${dateStr} 麻雀記録` } }] },
-        "日付":     { date: { start: dateStr } },
-        "人数":     { select: { name: numPlayers===3?"3人打ち":"4人打ち" } },
-        "局数":     { number: targetSessions.reduce((s,sess)=>s+sess.rounds.length,0) },
-      };
-      const rankNames  = ["1位","2位","3位","4位"];
-      const rankPoints = ["1位点数","2位点数","3位点数","4位点数"];
-      const rankMoney  = ["1位収支","2位収支","3位収支","4位収支"];
-      sorted.forEach((pi,rankIdx)=>{
-        if(rankIdx>=numPlayers) return;
-        props[rankNames[rankIdx]]  = { rich_text: [{ text: { content: players[pi] } }] };
-        props[rankPoints[rankIdx]] = { number: pointTotals[pi] };
-        props[rankMoney[rankIdx]]  = { number: totalMoney[pi] };
-      });
-      await fetch("https://api.notion.com/v1/pages", {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${NOTION_TOKEN}`,
-          "Content-Type": "application/json",
-          "Notion-Version": "2022-06-28",
-        },
-        body: JSON.stringify({ parent: { database_id: DATABASE_ID }, properties: props }),
-      });
-    } catch(e) { console.error("Notion保存エラー:", e); }
+      // Claudeに清算結果を送信してNotionに保存
+    const sorted = [...pRange].sort((a,b)=>totalMoney[b]-totalMoney[a]);
+    const dateStr = new Date(targetSessions[0].date).toLocaleDateString("ja-JP");
+    const lines = sorted.map((pi,rankIdx)=>
+      `${rankIdx+1}位: ${players[pi]}　点数:${fmt(pointTotals[pi])}　収支:${fmtYen(totalMoney[pi])}`
+    ).join("\n");
+    const totalRounds = targetSessions.reduce((s,sess)=>s+sess.rounds.length,0);
+    const msg = `以下の麻雀記録をNotionの「麻雀記録」データベースに保存してください。\n\n日付: ${dateStr}\n人数: ${numPlayers}人打ち\n局数: ${totalRounds}局\n\n${lines}`;
+    if(typeof sendPrompt === "function") sendPrompt(msg);
 
     setTimeout(()=>setTab("history"), 50);
   };
