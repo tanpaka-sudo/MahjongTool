@@ -617,9 +617,8 @@ function SettlementView({settlement, sessions, setSessions, setTab}) {
       :s
     ));
 
-    // Notionに自動保存
-    try {
-      // Claudeに清算結果を送信してNotionに保存
+
+    // Claudeに清算結果を送信してNotionに保存
     const sorted = [...pRange].sort((a,b)=>totalMoney[b]-totalMoney[a]);
     const dateStr = new Date(targetSessions[0].date).toLocaleDateString("ja-JP");
     const lines = sorted.map((pi,rankIdx)=>
