@@ -29,6 +29,7 @@ details summary::-webkit-details-marker { display: none; }
 <div id="root"></div>
 <script type="text/babel">
 const { useState, useEffect, useMemo } = React;
+
 const PC = [
   { bg:"#1a4a8a", accent:"#60a5fa", dim:"rgba(96,165,250,0.18)",  border:"rgba(96,165,250,0.45)"  },
   { bg:"#8a1a1a", accent:"#f87171", dim:"rgba(248,113,113,0.18)", border:"rgba(248,113,113,0.45)" },
@@ -45,21 +46,25 @@ const DEF_PLAYERS = {
   4: ["プレイヤー1","プレイヤー2","プレイヤー3","プレイヤー4"],
 };
 const DEF_RATES = { pointRate: 100, chipRate: 1000, initialChips: 0 };
-const DEF_MEMBERS = ["名前1","名前2","名前3","名前4","名前5","名前6","名前7","名前8"];
+const DEF_MEMBERS = ["プレイヤー1","プレイヤー2","プレイヤー3","プレイヤー4","プレイヤー5","プレイヤー6","プレイヤー7","プレイヤー8"];
 const STORAGE_KEY = "mahjong_v4";
 const mkRounds = (n) => Array.from({length:10}, ()=>Array(n).fill(""));
 
 function norm(s) {
   if (s===""||s==null) return null;
-  const normalized = String(s).replace(/[－−]/g, "-").replace(/[０-９]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0));
+  const normalized = String(s)
+    .replace(/[－−]/g, "-")
+    .replace(/[０-９]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0));
   const n = Number(normalized);
   return isNaN(n) ? null : n;
 }
-function fmt(n) { if (n==null) return "—"; return (n>0?"+":"")+n; }
-function fmtYen(n) { if (n==null) return "—"; return (n>0?"+":"")+ n.toLocaleString()+"円"; }
-function formatDate(ts) {
-  const d=new Date(ts);
-  return `${d.getFullYear()}/${String(d.getMonth()+1).padStart(2,"0")}/${String(d.getDate()).padStart(2,"0")} ${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`;
+function fmt(n) {
+  if (n==null) return "—";
+  return (n>0?"+":"")+n;
+}
+function fmtYen(n) {
+  if (n==null) return "—";
+  return (n>0?"+":"")+ n.toLocaleString()+"円";
 }
 function calcRound(scores, kaeshi, uma, initial) {
   const n = scores.length;
@@ -82,37 +87,744 @@ function tryAutoFill(r, initial) {
   newR[empties[0]] = String(initial*n - filledSum);
   return newR;
 }
-function loadData() { try { return JSON.parse(localStorage.getItem(STORAGE_KEY)||"{}"); } catch { return {}; } }
+function formatDate(ts) {
+  const d=new Date(ts);
+  return `${d.getFullYear()}/${String(d.getMonth()+1).padStart(2,"0")}/${String(d.getDate()).padStart(2,"0")} ${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`;
+}
+function loadData() {
+  try { return JSON.parse(localStorage.getItem(STORAGE_KEY)||"{}"); } catch { return {}; }
+}
 function saveData(data) { localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); }
 
+// ── メインアプリ ──────────────────────────────
 function App() {
   const stored = loadData();
-  const [tab, setTab] = useState("input");
+  const [tab, setTab]               = useState("input");
   const [numPlayers, setNumPlayers] = useState(stored.numPlayers||3);
-  const [players, setPlayers] = useState(stored.players||DEF_PLAYERS[3]);
-  const [settings, setSettings] = useState(stored.settings||DEF_SETTINGS[3]);
-  const [rates, setRates] = useState(stored.rates||DEF_RATES);
-  const [rounds, setRounds] = useState(()=>mkRounds(stored.numPlayers||3));
+  const [players, setPlayers]       = useState(stored.players||DEF_PLAYERS[3]);
+  const [settings, setSettings]     = useState(stored.settings||DEF_SETTINGS[3]);
+  const [rates, setRates]           = useState(stored.rates||DEF_RATES);
+  const [rounds, setRounds]         = useState(()=>mkRounds(stored.numPlayers||3));
   const [editingPlayer, setEditingPlayer] = useState(null);
-  const [editingName, setEditingName] = useState("");
-  const [showSettings, setShowSettings] = useState(false);
-  const [sessions, setSessions] = useState(()=>loadData().sessions||[]);
+  const [editingName, setEditingName]     = useState("");
+  const [showSettings, setShowSettings]   = useState(false);
+  const [sessions, setSessions]     = useState(()=>loadData().sessions||[]);
   const [settlement, setSettlement] = useState(null);
-  const [members, setMembers] = useState(()=>loadData().members||DEF_MEMBERS);
-  const [deleteConfirm, setDeleteConfirm] = useState(null);
+  const [members, setMembers]       = useState(()=>loadData().members||DEF_MEMBERS);
 
   useEffect(()=>{ saveData({sessions, numPlayers, players, settings, rates, members}); }, [sessions, numPlayers, players, settings, rates, members]);
 
-  const switchMode = (n) => { setNumPlayers(n); setPlayers(DEF_PLAYERS[n]); setSettings(DEF_SETTINGS[n]); setRounds(mkRounds(n)); };
+  const switchMode = (n) => {
+    setNumPlayers(n);
+    setPlayers(DEF_PLAYERS[n]);
+    setSettings(DEF_SETTINGS[n]);
+    setRounds(mkRounds(n));
+  };
+
   const pRange = Array.from({length:numPlayers},(_,i)=>i);
   const results = rounds.map(r=>calcRound(r, settings.kaeshi, settings.uma, settings.initial));
-  const totals = pRange.map(pi=>{ const vals=results.filter(r=>r&&r.final).map(r=>r.final[pi]); return vals.length>0 ? vals.reduce((a,b)=>a+b,0) : null; });
-  const finalRanks = totals.some(t=>t!==null) ? totals.map(t=>t===null?null:[...totals].filter(x=>x!==null).sort((a,b)=>b-a).indexOf(t)) : null;
+  const totals = pRange.map(pi=>{
+    const vals=results.filter(r=>r&&r.final).map(r=>r.final[pi]);
+    return vals.length>0 ? vals.reduce((a,b)=>a+b,0) : null;
+  });
+  const finalRanks = totals.some(t=>t!==null)
+    ? totals.map(t=>t===null?null:[...totals].filter(x=>x!==null).sort((a,b)=>b-a).indexOf(t))
+    : null;
 
-  const updateRound = (ri,pi,val) => { setRounds(prev=>prev.map((r,i)=>{ if(i!==ri) return r; const newR=[...r]; newR[pi]=val; return newR; })); };
-  const blurRound = (ri,pi) => { setRounds(prev=>prev.map((r,i)=>{ if(i!==ri) return r; return tryAutoFill([...r], settings.initial); })); };
+  const updateRound = (ri,pi,val) => {
+    setRounds(prev=>prev.map((r,i)=>{
+      if(i!==ri) return r;
+      const newR=[...r]; newR[pi]=val;
+      return newR;
+    }));
+  };
+  const blurRound = (ri,pi) => {
+    setRounds(prev=>prev.map((r,i)=>{
+      if(i!==ri) return r;
+      return tryAutoFill([...r], settings.initial);
+    }));
+  };
 
   const saveSession = () => {
-    const completedRounds = results.map((res,ri)=>res?{ scores: rounds[ri].map(s=>norm(s)), raw: res.raw, final: res.final, ranks: res.ranks }:null).filter(Boolean);
+    const completedRounds = results.map((res,ri)=>res?{
+      scores: rounds[ri].map(s=>norm(s)),
+      raw: res.raw, final: res.final, ranks: res.ranks,
+    }:null).filter(Boolean);
     if(completedRounds.length===0){ alert("入力された局がありません"); return; }
-    const sessionTotals = p
+    const sessionTotals = pRange.map(pi=>completedRounds.reduce((s,r)=>s+r.final[pi],0));
+    const sessionRanks  = pRange.map(pi=>[...sessionTotals].sort((a,b)=>b-a).indexOf(sessionTotals[pi]));
+    setSessions(prev=>[{
+      id: Date.now(), date: Date.now(),
+      numPlayers, players:[...players], settings:{...settings},
+      rounds: completedRounds, totals: sessionTotals, ranks: sessionRanks,
+      settled: false,
+    },...prev]);
+    setRounds(mkRounds(numPlayers));
+    setTab("history");
+  };
+
+  const deleteSession = (id) => {
+    setSessions(prev=>prev.filter(s=>s.id!==id));
+  };
+  const [deleteConfirm, setDeleteConfirm] = React.useState(null);
+  const handleDeletePress = (id) => {
+    if(deleteConfirm===id) {
+      deleteSession(id);
+      setDeleteConfirm(null);
+    } else {
+      setDeleteConfirm(id);
+      setTimeout(()=>setDeleteConfirm(null), 3000);
+    }
+  };
+
+  const openSettlement = (sessionIds, existingSettlement) => {
+    const targetSessions = sessions.filter(s=>sessionIds.includes(s.id));
+    if(targetSessions.length===0) return;
+    const n = targetSessions[0].numPlayers||3;
+    const ps = targetSessions[0].players;
+    const chips = existingSettlement
+      ? existingSettlement.chips.map(c=>String(c))
+      : Array(n).fill("");
+    const pointRate    = existingSettlement ? existingSettlement.pointRate    : rates.pointRate;
+    const chipRate     = existingSettlement ? existingSettlement.chipRate     : rates.chipRate;
+    const initialChips = existingSettlement ? existingSettlement.initialChips : (rates.initialChips||0);
+    setSettlement({ sessionIds, chips, pointRate, chipRate, initialChips, players: ps, numPlayers: n });
+    setTab("settlement");
+  };
+
+  const surplus=Math.round(((settings.kaeshi-settings.initial)*numPlayers)/1000);
+  const unsettledSessions = sessions.filter(s=>!s.settled);
+
+  return (
+    <div style={{minHeight:"100vh",paddingBottom:70}}>
+
+      {/* ヘッダー */}
+      <div style={{background:"rgba(0,0,0,0.5)",borderBottom:"1px solid rgba(255,255,255,0.07)",padding:"11px 14px",display:"flex",alignItems:"center",justifyContent:"space-between",position:"sticky",top:0,zIndex:100}}>
+        <div style={{display:"flex",alignItems:"center",gap:10}}>
+          <span style={{fontSize:16,fontWeight:900}}>🀄 麻雀点数計算</span>
+          <div style={{display:"flex",background:"rgba(255,255,255,0.08)",borderRadius:20,padding:2,gap:2}}>
+            {[3,4].map(n=>(
+              <button key={n} onClick={()=>switchMode(n)} style={{padding:"3px 10px",borderRadius:18,border:"none",fontSize:12,fontWeight:700,background:numPlayers===n?"rgba(139,92,246,0.7)":"transparent",color:numPlayers===n?"#fff":"rgba(255,255,255,0.45)"}}>
+                {n}人
+              </button>
+            ))}
+          </div>
+        </div>
+        {tab==="input" && (
+          <div style={{display:"flex",gap:6}}>
+            <button onClick={()=>setShowSettings(s=>!s)} style={{background:showSettings?"rgba(139,92,246,0.35)":"rgba(255,255,255,0.08)",border:"1px solid rgba(255,255,255,0.15)",color:"#fff",borderRadius:20,padding:"5px 12px",fontSize:13}}>⚙️</button>
+            <button onClick={()=>{if(confirm("リセットしますか？"))setRounds(mkRounds(numPlayers));}} style={{background:"rgba(239,68,68,0.15)",border:"1px solid rgba(239,68,68,0.3)",color:"#fca5a5",borderRadius:20,padding:"5px 12px",fontSize:13}}>🔄</button>
+          </div>
+        )}
+      </div>
+
+      {/* タブ */}
+      <div style={{display:"flex",background:"rgba(0,0,0,0.3)",borderBottom:"1px solid rgba(255,255,255,0.07)"}}>
+        {[["input","📝 入力"],["history","📋 履歴"],["stats","📊 成績"]].map(([key,label])=>(
+          <button key={key} onClick={()=>setTab(key)} style={{flex:1,padding:"10px 0",fontSize:12,fontWeight:tab===key?700:400,color:tab===key?"#c084fc":"rgba(255,255,255,0.45)",background:"transparent",border:"none",borderBottom:tab===key?"2px solid #c084fc":"2px solid transparent"}}>
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {/* ── 入力タブ ── */}
+      {tab==="input" && (
+        <div style={{padding:"10px 8px 0"}} className="fade-in">
+          {showSettings && (
+            <div style={{marginBottom:12,background:"rgba(255,255,255,0.05)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:14,padding:14}}>
+              <div style={{color:"rgba(255,255,255,0.5)",fontSize:11,marginBottom:10,fontWeight:700}}>基本設定（{numPlayers}人打ち）</div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:10}}>
+                {[{label:"初期点数",key:"initial"},{label:"返し点",key:"kaeshi"}].map(({label,key})=>(
+                  <div key={key}>
+                    <div style={{color:"rgba(255,255,255,0.5)",fontSize:10,marginBottom:4}}>{label}</div>
+                    <input type="text" inputMode="decimal" value={settings[key]}
+                      onChange={e=>setSettings(s=>({...s,[key]:e.target.value}))}
+                      onBlur={e=>{const n=Number(e.target.value);setSettings(s=>({...s,[key]:isNaN(n)?0:n}));}}
+                      style={{width:"100%",padding:"8px 6px",borderRadius:8,textAlign:"center",background:"rgba(255,255,255,0.08)",border:"1px solid rgba(255,255,255,0.15)",color:"#fff",fontSize:14,fontWeight:700,outline:"none"}}/>
+                  </div>
+                ))}
+              </div>
+              {surplus!==0&&<div style={{background:"rgba(234,179,8,0.1)",border:"1px solid rgba(234,179,8,0.3)",borderRadius:8,padding:"6px 10px",marginBottom:10,fontSize:11,color:"rgba(234,179,8,0.9)"}}>⚠️ 1位に <b>{surplus>0?"+":""}{surplus}点</b> 自動加算</div>}
+              <div style={{color:"rgba(255,255,255,0.5)",fontSize:10,marginBottom:6,fontWeight:700}}>ウマ</div>
+              <div style={{display:"grid",gridTemplateColumns:`repeat(${numPlayers},1fr)`,gap:6,marginBottom:12}}>
+                {settings.uma.map((u,i)=>(
+                  <div key={i}>
+                    <div style={{color:PC[i].accent,fontSize:9,textAlign:"center",marginBottom:3}}>{i+1}位</div>
+                    <input type="text" inputMode="decimal" value={u}
+                      onChange={e=>{const next=[...settings.uma];next[i]=e.target.value;setSettings(s=>({...s,uma:next}));}}
+                      onBlur={e=>{const next=[...settings.uma];const n=Number(e.target.value);next[i]=isNaN(n)?0:n;setSettings(s=>({...s,uma:next}));}}
+                      style={{width:"100%",padding:"8px 4px",borderRadius:8,textAlign:"center",background:PC[i].dim,border:`1px solid ${PC[i].border}`,color:PC[i].accent,fontSize:13,fontWeight:700,outline:"none"}}/>
+                  </div>
+                ))}
+              </div>
+              <div style={{borderTop:"1px solid rgba(255,255,255,0.08)",paddingTop:12}}>
+                <div style={{color:"rgba(255,255,255,0.5)",fontSize:10,marginBottom:8,fontWeight:700}}>清算レート（デフォルト）</div>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}>
+                  {[{label:"点数単価",key:"pointRate",unit:"円/点"},{label:"チップ単価",key:"chipRate",unit:"円/枚"},{label:"初期チップ",key:"initialChips",unit:"枚/人"}].map(({label,key,unit})=>(
+                    <div key={key}>
+                      <div style={{color:"rgba(255,255,255,0.5)",fontSize:10,marginBottom:4}}>{label}<span style={{color:"rgba(255,255,255,0.3)",fontSize:9,marginLeft:4}}>{unit}</span></div>
+                      <input type="text" inputMode="decimal" value={rates[key]??0}
+                        onChange={e=>setRates(r=>({...r,[key]:e.target.value}))}
+                        onBlur={e=>{const n=Number(e.target.value);setRates(r=>({...r,[key]:isNaN(n)?0:n}));}}
+                        style={{width:"100%",padding:"8px 6px",borderRadius:8,textAlign:"center",background:"rgba(255,255,255,0.08)",border:"1px solid rgba(255,255,255,0.15)",color:"#fff",fontSize:14,fontWeight:700,outline:"none"}}/>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* よく使う名前 */}
+              <div style={{borderTop:"1px solid rgba(255,255,255,0.08)",paddingTop:12,marginTop:12}}>
+                <div style={{color:"rgba(255,255,255,0.5)",fontSize:10,marginBottom:8,fontWeight:700}}>よく使う名前（タップで入力候補に表示）</div>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6,marginBottom:12}}>
+                  {members.map((m,mi)=>(
+                    <input key={mi} type="text" value={m}
+                      onChange={e=>{const next=[...members];next[mi]=e.target.value;setMembers(next);}}
+                      placeholder={`名前${mi+1}`}
+                      style={{padding:"8px 6px",borderRadius:8,textAlign:"center",background:"rgba(255,255,255,0.08)",border:"1px solid rgba(255,255,255,0.15)",color:"#fff",fontSize:13,fontWeight:700,outline:"none"}}/>
+                  ))}
+                </div>
+              </div>
+
+              <div style={{borderTop:"1px solid rgba(255,255,255,0.08)",paddingTop:12,marginTop:4}}>
+                <button onClick={()=>{
+                  localStorage.removeItem(STORAGE_KEY);
+                  location.reload();
+                }} style={{width:"100%",padding:"9px",borderRadius:8,border:"1px solid rgba(239,68,68,0.4)",background:"rgba(239,68,68,0.1)",color:"#fca5a5",fontSize:12,fontWeight:700}}>
+                  🗑️ 全履歴をクリア（リロード）
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* プレイヤーヘッダー */}
+          <div style={{position:"sticky",top:84,zIndex:50,background:"#0d0d1a",paddingTop:4,paddingBottom:2,marginBottom:2}}>
+            <div style={{display:"grid",gridTemplateColumns:`20px repeat(${numPlayers},1fr)`,gap:4,marginBottom:3}}>
+              <div/>
+              {players.map((name,pi)=>(
+                <div key={pi} onClick={()=>{setEditingPlayer(pi);setEditingName(name);}}
+                  style={{background:PC[pi].bg,borderRadius:8,padding:"6px 3px",textAlign:"center",cursor:"pointer",position:"relative"}}>
+                  {editingPlayer===pi
+                    ?<>
+                      <input autoFocus value={editingName} onChange={e=>setEditingName(e.target.value)}
+                          onBlur={()=>{setPlayers(p=>p.map((n,i)=>i===pi?(editingName.trim()||n):n));setEditingPlayer(null);}}
+                          onKeyDown={e=>e.key==="Enter"&&e.target.blur()}
+                          style={{background:"transparent",border:"none",borderBottom:"1px solid rgba(255,255,255,0.5)",color:"#fff",fontSize:10,fontWeight:700,textAlign:"center",width:"90%",outline:"none"}}/>
+                      {members.filter(m=>m.trim()&&m!==name).length>0&&(
+                        <div style={{position:"absolute",top:"100%",left:0,right:0,zIndex:200,background:"#1e1b4b",border:"1px solid rgba(139,92,246,0.5)",borderRadius:8,marginTop:2,boxShadow:"0 8px 24px rgba(0,0,0,0.6)"}}>
+                          {members.filter(m=>m.trim()&&m!==name).map((m,mi)=>(
+                            <div key={mi} onMouseDown={()=>{
+                              setPlayers(p=>p.map((n,i)=>i===pi?m:n));
+                              setEditingPlayer(null);
+                            }} style={{padding:"8px 10px",fontSize:12,color:"#e2e8f0",borderBottom:"1px solid rgba(255,255,255,0.07)",cursor:"pointer"}}>
+                              {m}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </>
+                    :<div style={{color:"#fff",fontSize:10,fontWeight:700,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{name}</div>}
+                </div>
+              ))}
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:`20px repeat(${numPlayers},1fr)`,gap:4}}>
+              <div/>
+              {pRange.map(pi=>(
+                <div key={pi} style={{display:"grid",gridTemplateColumns:"3fr 2fr",gap:2}}>
+                  <div style={{color:"rgba(255,255,255,0.55)",fontSize:9,textAlign:"center"}}>持ち点</div>
+                  <div style={{display:"grid",gridTemplateRows:"1fr 1fr",gap:1}}>
+                    <div style={{color:"rgba(255,255,255,0.45)",fontSize:8,textAlign:"center",lineHeight:1.2}}>素点</div>
+                    <div style={{color:"rgba(255,255,255,0.45)",fontSize:8,textAlign:"center",lineHeight:1.2}}>最終</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {rounds.map((round,ri)=>{
+            const res=results[ri];
+            const allFilled=round.every(s=>s!=="");
+            const scoreSum=allFilled?round.reduce((a,s)=>a+(norm(s)||0),0):null;
+            const expectedSum=settings.initial*numPlayers;
+            const diff=scoreSum!==null?scoreSum-expectedSum:null;
+            const hasError=diff!==null&&diff!==0;
+            return (
+              <div key={ri} style={{marginBottom:4}}>
+                <div style={{display:"grid",gridTemplateColumns:`20px repeat(${numPlayers},1fr)`,gap:4,padding:"3px 0",background:hasError?"rgba(239,68,68,0.05)":ri%2===0?"rgba(255,255,255,0.02)":"transparent",borderRadius:hasError?"8px 8px 0 0":6,border:hasError?"1px solid rgba(239,68,68,0.3)":"1px solid transparent",borderBottom:hasError?"none":undefined}}>
+                  <div style={{display:"flex",alignItems:"center",justifyContent:"center",color:hasError?"#f87171":"rgba(255,255,255,0.22)",fontSize:9,fontWeight:700}}>{hasError?"⚠️":ri+1}</div>
+                  {pRange.map(pi=>{
+                    const hasScore=round[pi]!=="";
+                    const rawVal=res&&res.raw?res.raw[pi]:null;
+                    const finalVal=res&&res.final?res.final[pi]:null;
+                    const isFirst=res&&res.ranks&&res.ranks[pi]===0;
+                    return (
+                      <div key={pi} style={{display:"grid",gridTemplateColumns:"3fr 2fr",gap:2}}>
+                        <input type="text" inputMode="decimal" placeholder="—" value={round[pi]}
+                          onChange={e=>updateRound(ri,pi,e.target.value)}
+                          onBlur={()=>blurRound(ri,pi)}
+                          style={{height:44,padding:"0 2px",borderRadius:6,textAlign:"center",width:"100%",background:hasScore?PC[pi].dim:"rgba(255,255,255,0.05)",border:`1px solid ${hasScore?PC[pi].border:"rgba(255,255,255,0.08)"}`,color:hasScore?PC[pi].accent:"rgba(255,255,255,0.55)",fontSize:12,fontWeight:700,outline:"none"}}/>
+                        <div style={{display:"grid",gridTemplateRows:"1fr 1fr",gap:1}}>
+                          <div style={{borderRadius:4,display:"flex",alignItems:"center",justifyContent:"center",background:"rgba(255,255,255,0.04)",color:rawVal!==null?(rawVal>=0?"#86efac":"#fca5a5"):"rgba(255,255,255,0.35)",fontSize:10,fontWeight:600}}>{rawVal!==null?fmt(rawVal):"—"}</div>
+                          <div style={{borderRadius:4,display:"flex",alignItems:"center",justifyContent:"center",flexDirection:"row",gap:1,background:isFirst?"rgba(234,179,8,0.12)":"rgba(255,255,255,0.04)",border:`1px solid ${isFirst?"rgba(234,179,8,0.35)":"transparent"}`,color:finalVal!==null?(finalVal>=0?"#fde047":"#f87171"):"rgba(255,255,255,0.35)",fontSize:10,fontWeight:700}}>
+                            {isFirst&&<span style={{fontSize:7}}>👑</span>}
+                            {finalVal!==null?fmt(finalVal):"—"}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+                {hasError&&(
+                  <div style={{background:"rgba(239,68,68,0.1)",border:"1px solid rgba(239,68,68,0.3)",borderTop:"none",borderRadius:"0 0 8px 8px",padding:"4px 8px",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+                    <span style={{color:"#fca5a5",fontSize:9}}>合計 {scoreSum.toLocaleString()}点（期待値 {expectedSum.toLocaleString()}点）</span>
+                    <span className="ep" style={{color:"#f87171",fontSize:10,fontWeight:700}}>{diff>0?`+${diff.toLocaleString()}`:diff.toLocaleString()}点</span>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+
+          <div style={{borderTop:"1px solid rgba(139,92,246,0.3)",margin:"8px 0"}}/>
+          <div style={{display:"grid",gridTemplateColumns:`20px repeat(${numPlayers},1fr)`,gap:4,marginBottom:14}}>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"center"}}><span style={{color:"rgba(255,255,255,0.4)",fontSize:9}}>計</span></div>
+            {pRange.map(pi=>{
+              const total=totals[pi];
+              const rank=finalRanks?finalRanks[pi]:null;
+              return (
+                <div key={pi} style={{borderRadius:10,padding:"10px 4px",textAlign:"center",background:rank===0?"linear-gradient(135deg,rgba(234,179,8,0.22),rgba(234,179,8,0.07))":rank===1?"rgba(148,163,184,0.1)":rank===2?"rgba(180,120,90,0.1)":"rgba(255,255,255,0.05)",border:rank===0?"1px solid rgba(234,179,8,0.45)":"1px solid rgba(255,255,255,0.07)"}}>
+                  <div style={{fontSize:18,marginBottom:2}}>{rank!==null?RANK_EMOJI[rank]:"—"}</div>
+                  <div style={{fontSize:15,fontWeight:900,color:total===null?"rgba(255,255,255,0.2)":total>=0?"#fde047":"#f87171"}}>{total!==null?fmt(total):"—"}</div>
+                  <div style={{color:"rgba(255,255,255,0.4)",fontSize:8,marginTop:2}}>最終点合計</div>
+                </div>
+              );
+            })}
+          </div>
+          <button onClick={saveSession} style={{width:"100%",padding:"13px",borderRadius:12,border:"none",background:"linear-gradient(135deg,#7c3aed,#4f46e5)",color:"#fff",fontSize:15,fontWeight:900,marginBottom:20,boxShadow:"0 4px 20px rgba(124,58,237,0.4)"}}>
+            📁 この半荘を記録する
+          </button>
+        </div>
+      )}
+
+      {/* ── 履歴タブ ── */}
+      {tab==="history" && (
+        <div style={{padding:"12px 10px 0"}} className="fade-in">
+
+          {sessions.some(s=>s.settled&&s.settlement) && (()=>{
+            const settled = sessions.filter(s=>s.settled&&s.settlement);
+            const allNames = [...new Set(settled.flatMap(s=>s.players))];
+            const moneyMap={}, pointMap={}, chipMap={}, venueMap={};
+            allNames.forEach(name=>{ moneyMap[name]=0; pointMap[name]=0; chipMap[name]=0; venueMap[name]=0; });
+            settled.forEach(s=>{
+              s.players.forEach((name,pi)=>{
+                const sv=s.settlement;
+                moneyMap[name]+=(sv.totalMoney[pi]||0);
+                pointMap[name]+=(sv.pointMoney[pi]||0);
+                chipMap[name] +=(sv.chipMoney[pi]||0);
+                venueMap[name]+=(sv.venueMoney?.[pi]||0);
+              });
+            });
+            const hasChip  = allNames.some(n=>chipMap[n]!==0);
+            const hasVenue = allNames.some(n=>venueMap[n]!==0);
+            const totalVenue = settled.reduce((sum,s)=>{ const v=s.settlement.venueTotal||0; return sum+v; }, 0);
+            const sorted = [...allNames].sort((a,b)=>moneyMap[b]-moneyMap[a]);
+            return (
+              <div style={{background:"rgba(255,255,255,0.05)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:14,padding:"12px 14px",marginBottom:14}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+                  <div style={{fontSize:11,color:"rgba(255,255,255,0.4)",fontWeight:700}}>💴 通算収支（清算済み）</div>
+                  {hasVenue&&<div style={{fontSize:10,color:"rgba(255,255,255,0.35)"}}>🏠 場所代総額 <span style={{color:"#f87171",fontWeight:700}}>{totalVenue.toLocaleString()}円</span></div>}
+                </div>
+                <div style={{display:"grid",gridTemplateColumns:`repeat(${Math.min(sorted.length,4)},1fr)`,gap:6}}>
+                  {sorted.map((name,idx)=>{
+                    const money=moneyMap[name];
+                    const pc=PC[idx%PC.length];
+                    return (
+                      <div key={name} style={{background:money>=0?"rgba(74,222,128,0.08)":"rgba(248,113,113,0.08)",border:`1px solid ${money>=0?"rgba(74,222,128,0.25)":"rgba(248,113,113,0.25)"}`,borderRadius:10,padding:"8px 6px",textAlign:"center"}}>
+                        <div style={{fontSize:9,color:pc.accent,fontWeight:700,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",marginBottom:4}}>{name}</div>
+                        <div style={{fontSize:15,fontWeight:900,color:money>=0?"#4ade80":"#f87171",marginBottom:4}}>{fmtYen(money)}</div>
+                        <div style={{borderTop:"1px solid rgba(255,255,255,0.07)",paddingTop:4,display:"flex",flexDirection:"column",gap:2}}>
+                          <div style={{display:"flex",justifyContent:"space-between",fontSize:9}}>
+                            <span style={{color:"rgba(255,255,255,0.35)"}}>点数</span>
+                            <span style={{color:pointMap[name]>=0?"#fde047":"#f87171",fontWeight:700}}>{fmtYen(pointMap[name])}</span>
+                          </div>
+                          {hasChip&&<div style={{display:"flex",justifyContent:"space-between",fontSize:9}}>
+                            <span style={{color:"rgba(255,255,255,0.35)"}}>チップ</span>
+                            <span style={{color:chipMap[name]>=0?"#4ade80":"#f87171",fontWeight:700}}>{fmtYen(chipMap[name])}</span>
+                          </div>}
+                          {hasVenue&&<div style={{display:"flex",justifyContent:"space-between",fontSize:9}}>
+                            <span style={{color:"rgba(255,255,255,0.35)"}}>場所代</span>
+                            <span style={{color:"#f87171",fontWeight:700}}>{fmtYen(venueMap[name])}</span>
+                          </div>}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })()}
+
+          {unsettledSessions.length>0 && (
+            <button onClick={()=>openSettlement(unsettledSessions.map(s=>s.id))}
+              style={{width:"100%",padding:"13px",borderRadius:12,border:"none",background:"linear-gradient(135deg,#059669,#047857)",color:"#fff",fontSize:14,fontWeight:900,marginBottom:14,boxShadow:"0 4px 20px rgba(5,150,105,0.4)"}}>
+              💴 未清算の半荘を清算する（{unsettledSessions.length}半荘）
+            </button>
+          )}
+          {sessions.length===0
+            ? <div style={{textAlign:"center",color:"rgba(255,255,255,0.3)",marginTop:60,fontSize:14}}>まだ記録がありません<br/><span style={{fontSize:12}}>半荘終了後に「記録する」を押してください</span></div>
+            : sessions.map(session=>{
+              const n=session.numPlayers||3;
+              const sPC=PC.slice(0,n);
+              return (
+                <div key={session.id} style={{marginBottom:12,background:"rgba(255,255,255,0.05)",border:`1px solid ${session.settled?"rgba(5,150,105,0.35)":"rgba(255,255,255,0.1)"}`,borderRadius:14,overflow:"hidden"}}>
+                  <div style={{padding:"10px 12px",background:"rgba(255,255,255,0.04)",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                    <div>
+                      <div style={{fontSize:12,fontWeight:700}}>{formatDate(session.date)}</div>
+                      <div style={{fontSize:10,color:"rgba(255,255,255,0.4)",marginTop:2}}>
+                        {n}人打ち・{session.rounds.length}局
+                        {session.settled&&<span style={{marginLeft:6,color:"#4ade80",fontSize:10}}>✓ 清算済</span>}
+                      </div>
+                    </div>
+                    <div style={{display:"flex",gap:6}}>
+                      {session.settled&&(
+                        <button onClick={()=>openSettlement([session.id], session.settlement)} style={{background:"rgba(234,179,8,0.15)",border:"1px solid rgba(234,179,8,0.3)",color:"#fde047",borderRadius:20,padding:"4px 10px",fontSize:11}}>修正</button>
+                      )}
+                      <button onClick={()=>handleDeletePress(session.id)} style={{background:deleteConfirm===session.id?"rgba(239,68,68,0.6)":"rgba(239,68,68,0.15)",border:"1px solid rgba(239,68,68,0.3)",color:deleteConfirm===session.id?"#fff":"#fca5a5",borderRadius:20,padding:"4px 10px",fontSize:11,transition:"all 0.2s"}}>
+                        {deleteConfirm===session.id?"確認":"削除"}
+                      </button>
+                    </div>
+                  </div>
+                  <div style={{padding:"10px 12px"}}>
+                    <div style={{display:"grid",gridTemplateColumns:`repeat(${n},1fr)`,gap:6,marginBottom:10}}>
+                      {session.players.map((name,pi)=>{
+                        const rank=session.ranks[pi];
+                        return (
+                          <div key={pi} style={{background:rank===0?"rgba(234,179,8,0.1)":"rgba(255,255,255,0.04)",border:`1px solid ${rank===0?"rgba(234,179,8,0.35)":sPC[pi].border+"44"}`,borderRadius:10,padding:"8px 4px",textAlign:"center"}}>
+                            <div style={{fontSize:15,marginBottom:2}}>{RANK_EMOJI[rank]}</div>
+                            <div style={{fontSize:9,color:sPC[pi].accent,fontWeight:700,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{name}</div>
+                            <div style={{fontSize:14,fontWeight:900,color:session.totals[pi]>=0?"#fde047":"#f87171",marginTop:2}}>{fmt(session.totals[pi])}</div>
+                            {session.settled&&session.settlement&&(
+                              <div style={{fontSize:11,fontWeight:700,color:session.settlement.totalMoney[pi]>=0?"#4ade80":"#f87171",marginTop:3,borderTop:"1px solid rgba(255,255,255,0.1)",paddingTop:3}}>
+                                {fmtYen(session.settlement.totalMoney[pi])}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                    <details onToggle={e=>{
+                      const sum=e.currentTarget.querySelector(".detail-summary");
+                      if(sum) sum.textContent=e.currentTarget.open?"◀ 局詳細を隠す":"▶ 局詳細を見る";
+                    }}>
+                      <summary style={{color:"rgba(255,255,255,0.4)",fontSize:11,cursor:"pointer",userSelect:"none"}}>
+                        <span className="detail-summary">▶ 局詳細を見る</span>
+                      </summary>
+                      <div style={{marginTop:8}}>
+                        <div style={{display:"grid",gridTemplateColumns:`16px repeat(${n},1fr)`,gap:3,marginBottom:4}}>
+                          <div/>
+                          {session.players.map((name,pi)=><div key={pi} style={{fontSize:8,color:sPC[pi].accent,textAlign:"center",fontWeight:700}}>{name}</div>)}
+                        </div>
+                        {session.rounds.map((r,ri)=>(
+                          <div key={ri} style={{display:"grid",gridTemplateColumns:`16px repeat(${n},1fr)`,gap:3,marginBottom:3}}>
+                            <div style={{color:"rgba(255,255,255,0.3)",fontSize:9,display:"flex",alignItems:"center",justifyContent:"center"}}>{ri+1}</div>
+                            {Array.from({length:n},(_,pi)=>(
+                              <div key={pi} style={{background:r.ranks&&r.ranks[pi]===0?"rgba(234,179,8,0.08)":"rgba(255,255,255,0.03)",borderRadius:6,padding:"3px 2px",textAlign:"center"}}>
+                                <div style={{fontSize:8,color:"rgba(255,255,255,0.4)"}}>{r.scores[pi]}</div>
+                                <div style={{fontSize:10,fontWeight:700,color:r.final&&r.final[pi]>=0?"#fde047":"#f87171"}}>{r.final?fmt(r.final[pi]):"—"}</div>
+                              </div>
+                            ))}
+                          </div>
+                        ))}
+                        <div style={{textAlign:"center",marginTop:10}}>
+                          <button onClick={e=>{
+                            const det=e.currentTarget.closest("details");
+                            det.removeAttribute("open");
+                            const sum=det.querySelector(".detail-summary");
+                            if(sum) sum.textContent="▶ 局詳細を見る";
+                          }} style={{background:"rgba(255,255,255,0.08)",border:"1px solid rgba(255,255,255,0.15)",color:"rgba(255,255,255,0.5)",borderRadius:20,padding:"5px 18px",fontSize:11,cursor:"pointer"}}>
+                            ▲ 閉じる
+                          </button>
+                        </div>
+                      </div>
+                    </details>
+                  </div>
+                </div>
+              );
+            })
+          }
+        </div>
+      )}
+
+      {/* ── 清算タブ ── */}
+      {tab==="settlement" && settlement && (
+        <SettlementView
+          settlement={settlement}
+          sessions={sessions}
+          setSessions={setSessions}
+          setTab={setTab}
+        />
+      )}
+
+      {/* ── 成績タブ ── */}
+      {tab==="stats" && (
+        <div style={{padding:"12px 10px 0"}} className="fade-in">
+          {sessions.length===0
+            ? <div style={{textAlign:"center",color:"rgba(255,255,255,0.3)",marginTop:60,fontSize:14}}>まだ記録がありません</div>
+            : <StatsView sessions={sessions}/>
+          }
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── 清算ビュー ────────────────────────────────
+function SettlementView({settlement, sessions, setSessions, setTab}) {
+  const {sessionIds, players, numPlayers} = settlement;
+  const [chips, setChips]               = useState(Array(numPlayers).fill(""));
+  const [pointRate, setPointRate]       = useState(settlement.pointRate);
+  const [chipRate, setChipRate]         = useState(settlement.chipRate);
+  const [initialChips, setInitialChips] = useState(settlement.initialChips??0);
+  const [venueTotal, setVenueTotal]     = useState("");
+
+  const pRange = Array.from({length:numPlayers},(_,i)=>i);
+  const targetSessions = sessions.filter(s=>sessionIds.includes(s.id));
+
+  const pointTotals = pRange.map(pi=>
+    targetSessions.reduce((s,sess)=>s+sess.totals[pi], 0)
+  );
+
+  const chipCounts   = chips.map(c=>c===""?null:Number(c));
+  const useChips     = chipCounts.some(c=>c!==null);
+  const filledCounts = chipCounts.map(c=>c!==null ? c : initialChips);
+  const totalChips   = filledCounts.reduce((a,b)=>a+b, 0);
+  const avgChips     = totalChips / numPlayers;
+  const chipDiffs    = useChips ? filledCounts.map(c=>c-avgChips) : pRange.map(()=>0);
+
+  const pointMoney = pRange.map(pi=>Math.round(pointTotals[pi]*pointRate));
+  const chipMoney  = chipDiffs.map(d=>Math.round(d*chipRate));
+
+  const useVenue = venueTotal !== "" && Number(venueTotal) > 0;
+  const venueTotalNum = useVenue ? Number(venueTotal) : 0;
+  const perPerson = useVenue ? Math.ceil(venueTotalNum / numPlayers / 500) * 500 : 0;
+  const baseTotal = pRange.map(pi=>pointMoney[pi]+chipMoney[pi]);
+  const lastPi = baseTotal.indexOf(Math.min(...baseTotal));
+  const venueMoney = pRange.map(pi=> useVenue ? (pi===lastPi ? -(venueTotalNum - perPerson*(numPlayers-1)) : -perPerson) : 0);
+
+  const totalMoney = pRange.map(pi=>pointMoney[pi]+chipMoney[pi]+venueMoney[pi]);
+
+  const confirmSettlement = async () => {
+    setSessions(prev=>prev.map(s=>sessionIds.includes(s.id)
+      ?{...s, settled:true, settlement:{chips:filledCounts,pointRate,chipRate,initialChips,venueTotal:venueTotalNum,pointTotals,chipDiffs,pointMoney,chipMoney,venueMoney,totalMoney}}
+      :s
+    ));
+
+    // Notionに自動保存
+    try {
+      const NOTION_TOKEN = "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";
+      const DATABASE_ID  = "676f74fd-32e4-4dd7-ae19-7069d2a85821";
+      const sorted = [...pRange].sort((a,b)=>totalMoney[b]-totalMoney[a]);
+      const dateStr = new Date(targetSessions[0].date).toISOString().split("T")[0];
+      const props = {
+        "タイトル": { title: [{ text: { content: `${dateStr} 麻雀記録` } }] },
+        "日付":     { date: { start: dateStr } },
+        "人数":     { select: { name: numPlayers===3?"3人打ち":"4人打ち" } },
+        "局数":     { number: targetSessions.reduce((s,sess)=>s+sess.rounds.length,0) },
+      };
+      const rankNames  = ["1位","2位","3位","4位"];
+      const rankPoints = ["1位点数","2位点数","3位点数","4位点数"];
+      const rankMoney  = ["1位収支","2位収支","3位収支","4位収支"];
+      sorted.forEach((pi,rankIdx)=>{
+        if(rankIdx>=numPlayers) return;
+        props[rankNames[rankIdx]]  = { rich_text: [{ text: { content: players[pi] } }] };
+        props[rankPoints[rankIdx]] = { number: pointTotals[pi] };
+        props[rankMoney[rankIdx]]  = { number: totalMoney[pi] };
+      });
+      await fetch("https://api.notion.com/v1/pages", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${NOTION_TOKEN}`,
+          "Content-Type": "application/json",
+          "Notion-Version": "2022-06-28",
+        },
+        body: JSON.stringify({ parent: { database_id: DATABASE_ID }, properties: props }),
+      });
+    } catch(e) { console.error("Notion保存エラー:", e); }
+
+    setTimeout(()=>setTab("history"), 50);
+  };
+
+  return (
+    <div style={{padding:"12px 10px 0"}} className="fade-in">
+      <div style={{color:"rgba(255,255,255,0.5)",fontSize:11,marginBottom:12}}>
+        対象：{targetSessions.length}半荘 / {targetSessions.reduce((s,sess)=>s+sess.rounds.length,0)}局
+      </div>
+
+      <div style={{background:"rgba(255,255,255,0.05)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:12,padding:12,marginBottom:12}}>
+        <div style={{color:"rgba(255,255,255,0.5)",fontSize:11,marginBottom:10,fontWeight:700}}>清算レート</div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}>
+          {[{label:"点数単価",unit:"円/点",val:pointRate,set:setPointRate},{label:"チップ単価",unit:"円/枚",val:chipRate,set:setChipRate},{label:"初期チップ",unit:"枚/人",val:initialChips,set:setInitialChips}].map(({label,unit,val,set})=>(
+            <div key={label}>
+              <div style={{color:"rgba(255,255,255,0.4)",fontSize:10,marginBottom:4}}>{label}<span style={{fontSize:9,marginLeft:3,color:"rgba(255,255,255,0.3)"}}>{unit}</span></div>
+              <input type="text" inputMode="decimal" value={val}
+                onChange={e=>set(e.target.value)}
+                onBlur={e=>{const n=Number(e.target.value);set(isNaN(n)?0:n);}}
+                style={{width:"100%",padding:"8px 6px",borderRadius:8,textAlign:"center",background:"rgba(255,255,255,0.08)",border:"1px solid rgba(255,255,255,0.15)",color:"#fff",fontSize:14,fontWeight:700,outline:"none"}}/>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div style={{background:"rgba(255,255,255,0.05)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:12,padding:12,marginBottom:12}}>
+        <div style={{color:"rgba(255,255,255,0.5)",fontSize:11,marginBottom:10,fontWeight:700}}>チップ枚数（任意・未入力は初期枚数{initialChips}枚で計算）</div>
+        <div style={{display:"grid",gridTemplateColumns:`repeat(${numPlayers},1fr)`,gap:8}}>
+          {pRange.map(pi=>(
+            <div key={pi}>
+              <div style={{color:PC[pi].accent,fontSize:10,textAlign:"center",marginBottom:4,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{players[pi]}</div>
+              <input type="text" inputMode="decimal" placeholder={String(initialChips)} value={chips[pi]}
+                onChange={e=>{const next=[...chips];next[pi]=e.target.value;setChips(next);}}
+                style={{width:"100%",padding:"10px 4px",borderRadius:8,textAlign:"center",background:PC[pi].dim,border:`1px solid ${PC[pi].border}`,color:PC[pi].accent,fontSize:18,fontWeight:700,outline:"none"}}/>
+              {useChips&&(
+                <div style={{textAlign:"center",fontSize:11,marginTop:4,color:chipDiffs[pi]>=0?"#4ade80":"#f87171",fontWeight:700}}>
+                  {chipDiffs[pi]>=0?"+":""}{chipDiffs[pi].toFixed(1)}枚
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div style={{background:"rgba(255,255,255,0.05)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:12,padding:12,marginBottom:12}}>
+        <div style={{color:"rgba(255,255,255,0.5)",fontSize:11,marginBottom:10,fontWeight:700}}>場所代（任意）</div>
+        <div style={{display:"flex",gap:10,alignItems:"center"}}>
+          <div style={{flex:1}}>
+            <div style={{color:"rgba(255,255,255,0.4)",fontSize:10,marginBottom:4}}>総額<span style={{color:"rgba(255,255,255,0.3)",fontSize:9,marginLeft:4}}>円</span></div>
+            <input type="text" inputMode="decimal" placeholder="0" value={venueTotal}
+              onChange={e=>setVenueTotal(e.target.value)}
+              onBlur={e=>{const n=Number(e.target.value);setVenueTotal(isNaN(n)||n<=0?"":String(n));}}
+              style={{width:"100%",padding:"10px 6px",borderRadius:8,textAlign:"center",background:"rgba(255,255,255,0.08)",border:"1px solid rgba(255,255,255,0.15)",color:"#fff",fontSize:16,fontWeight:700,outline:"none"}}/>
+          </div>
+          {useVenue&&(
+            <div style={{flex:1,background:"rgba(139,92,246,0.1)",border:"1px solid rgba(139,92,246,0.3)",borderRadius:8,padding:"8px 10px",textAlign:"center"}}>
+              <div style={{color:"rgba(255,255,255,0.4)",fontSize:9,marginBottom:3}}>1人あたり（最下位以外）</div>
+              <div style={{color:"#c084fc",fontSize:16,fontWeight:900}}>{perPerson.toLocaleString()}円</div>
+              <div style={{color:"rgba(255,255,255,0.35)",fontSize:9,marginTop:2}}>最下位: {(venueTotalNum-perPerson*(numPlayers-1)).toLocaleString()}円</div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div style={{background:"rgba(255,255,255,0.05)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:12,padding:12,marginBottom:12}}>
+        <div style={{color:"rgba(255,255,255,0.5)",fontSize:11,marginBottom:10,fontWeight:700}}>清算結果</div>
+        <div style={{display:"grid",gridTemplateColumns:`repeat(${numPlayers},1fr)`,gap:6,marginBottom:12}}>
+          {pRange.map(pi=>(
+            <div key={pi} style={{background:totalMoney[pi]>=0?"rgba(74,222,128,0.08)":"rgba(248,113,113,0.08)",border:`1px solid ${totalMoney[pi]>=0?"rgba(74,222,128,0.3)":"rgba(248,113,113,0.3)"}`,borderRadius:10,padding:"10px 4px",textAlign:"center"}}>
+              <div style={{fontSize:9,color:PC[pi].accent,fontWeight:700,marginBottom:6,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{players[pi]}</div>
+              <div style={{fontSize:9,color:"rgba(255,255,255,0.4)"}}>点数</div>
+              <div style={{fontSize:11,fontWeight:700,color:pointMoney[pi]>=0?"#fde047":"#f87171",marginBottom:4}}>{fmtYen(pointMoney[pi])}</div>
+              <div style={{fontSize:9,color:"rgba(255,255,255,0.4)"}}>チップ</div>
+              <div style={{fontSize:11,fontWeight:700,color:chipMoney[pi]>=0?"#4ade80":"#f87171",marginBottom:useVenue?4:6}}>
+                {useChips ? fmtYen(chipMoney[pi]) : "—"}
+              </div>
+              {useVenue&&(<>
+                <div style={{fontSize:9,color:"rgba(255,255,255,0.4)"}}>場所代</div>
+                <div style={{fontSize:11,fontWeight:700,color:"#f87171",marginBottom:6}}>{fmtYen(venueMoney[pi])}</div>
+              </>)}
+              <div style={{borderTop:"1px solid rgba(255,255,255,0.1)",paddingTop:6}}>
+                <div style={{fontSize:14,fontWeight:900,color:totalMoney[pi]>=0?"#4ade80":"#f87171"}}>
+                  {fmtYen(totalMoney[pi])}
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div style={{display:"flex",gap:8,marginBottom:20}}>
+        <button onClick={()=>setTab("history")} style={{flex:1,padding:"12px",borderRadius:12,border:"1px solid rgba(255,255,255,0.2)",background:"transparent",color:"rgba(255,255,255,0.6)",fontSize:14,fontWeight:700}}>
+          戻る
+        </button>
+        <button onClick={confirmSettlement} style={{flex:2,padding:"12px",borderRadius:12,border:"none",background:"linear-gradient(135deg,#059669,#047857)",color:"#fff",fontSize:14,fontWeight:900,boxShadow:"0 4px 20px rgba(5,150,105,0.4)"}}>
+          ✅ 清算を確定する
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ── 成績ビュー ────────────────────────────────
+function StatsView({sessions}) {
+  const [filterMode, setFilterMode] = useState(0);
+  const filtered = filterMode===0 ? sessions : sessions.filter(s=>(s.numPlayers||3)===filterMode);
+  const allPlayers = useMemo(()=>{
+    const names=new Set(); filtered.forEach(s=>s.players.forEach(n=>names.add(n))); return [...names];
+  },[filtered]);
+  const playerStats = useMemo(()=>{
+    return allPlayers.map(name=>{
+      let games=0, totalScore=0, totalMoney=0, ranks=[0,0,0,0];
+      filtered.forEach(s=>{
+        const idx=s.players.indexOf(name); if(idx===-1) return;
+        games++; totalScore+=s.totals[idx]; ranks[s.ranks[idx]]++;
+        if(s.settled&&s.settlement) totalMoney+=s.settlement.totalMoney[idx]||0;
+      });
+      const avgRank = games>0?(ranks.reduce((s,c,i)=>s+c*(i+1),0)/games).toFixed(2):"-";
+      const rank1Rate = games>0?Math.round(ranks[0]/games*100):0;
+      return {name, games, totalScore, totalMoney, ranks, avgRank, rank1Rate};
+    }).sort((a,b)=>b.totalScore-a.totalScore);
+  },[allPlayers, filtered]);
+
+  return (
+    <div>
+      <div style={{display:"flex",gap:6,marginBottom:12}}>
+        {[[0,"全て"],[3,"三麻"],[4,"四麻"]].map(([v,label])=>(
+          <button key={v} onClick={()=>setFilterMode(v)} style={{padding:"5px 14px",borderRadius:20,border:`1px solid ${filterMode===v?"rgba(139,92,246,0.6)":"rgba(255,255,255,0.15)"}`,background:filterMode===v?"rgba(139,92,246,0.25)":"transparent",color:filterMode===v?"#c084fc":"rgba(255,255,255,0.5)",fontSize:12,fontWeight:filterMode===v?700:400}}>
+            {label}
+          </button>
+        ))}
+        <span style={{marginLeft:"auto",color:"rgba(255,255,255,0.4)",fontSize:11,display:"flex",alignItems:"center"}}>{filtered.length}半荘</span>
+      </div>
+      {playerStats.length===0
+        ? <div style={{textAlign:"center",color:"rgba(255,255,255,0.3)",marginTop:40,fontSize:13}}>該当する記録がありません</div>
+        : playerStats.map((p,idx)=>(
+          <div key={p.name} style={{marginBottom:10,background:"rgba(255,255,255,0.05)",border:`1px solid ${idx===0?"rgba(234,179,8,0.35)":"rgba(255,255,255,0.08)"}`,borderRadius:14,padding:"12px 14px",boxShadow:idx===0?"0 0 16px rgba(234,179,8,0.1)":"none"}}>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
+              <div style={{display:"flex",alignItems:"center",gap:8}}>
+                <span style={{fontSize:22}}>{RANK_EMOJI[idx]||"　"}</span>
+                <div>
+                  <div style={{fontSize:15,fontWeight:900}}>{p.name}</div>
+                  <div style={{fontSize:10,color:"rgba(255,255,255,0.4)"}}>{p.games}半荘</div>
+                </div>
+              </div>
+              <div style={{textAlign:"right"}}>
+                <div style={{fontSize:18,fontWeight:900,color:p.totalScore>=0?"#fde047":"#f87171"}}>{fmt(p.totalScore)}</div>
+                <div style={{fontSize:10,color:"rgba(255,255,255,0.4)"}}>通算点</div>
+                {p.totalMoney!==0&&<div style={{fontSize:14,fontWeight:700,color:p.totalMoney>=0?"#4ade80":"#f87171",marginTop:2}}>{fmtYen(p.totalMoney)}</div>}
+              </div>
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:6,marginBottom:8}}>
+              {[{label:"平均順位",value:p.avgRank},{label:"1位率",value:`${p.rank1Rate}%`},{label:"1位回数",value:`${p.ranks[0]}回`},{label:"ラス回数",value:`${p.ranks[3]+p.ranks[2]}回`}].map(({label,value})=>(
+                <div key={label} style={{background:"rgba(255,255,255,0.05)",borderRadius:8,padding:"7px 4px",textAlign:"center"}}>
+                  <div style={{fontSize:13,fontWeight:700,color:"#e2e8f0"}}>{value}</div>
+                  <div style={{fontSize:9,color:"rgba(255,255,255,0.4)",marginTop:2}}>{label}</div>
+                </div>
+              ))}
+            </div>
+            <div style={{display:"flex",height:6,borderRadius:3,overflow:"hidden",gap:1}}>
+              {[["#fde047",0],["#94a3b8",1],["#cd7c2f",2],["#ef4444",3]].map(([c,ri])=>
+                p.games>0&&p.ranks[ri]>0?<div key={ri} style={{width:`${p.ranks[ri]/p.games*100}%`,background:c}}/>:null
+              )}
+            </div>
+            <div style={{display:"flex",gap:8,marginTop:4,flexWrap:"wrap"}}>
+              {[["🥇",p.ranks[0],"#fde047"],["🥈",p.ranks[1],"#94a3b8"],["🥉",p.ranks[2],"#cd7c2f"],["4️⃣",p.ranks[3],"#ef4444"]].filter(([,n])=>n>0).map(([e,n,c])=>(
+                <span key={e} style={{fontSize:10,color:c}}>{e}{n}回</span>
+              ))}
+            </div>
+          </div>
+        ))
+      }
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+</body>
+</html>
